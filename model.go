@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,11 +11,11 @@ import (
 )
 
 var (
-	borderColor   = lipgloss.Color("12")
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
-	doneStyle     = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("8"))
-	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	borderColor    = lipgloss.Color("12")
+	dimBorderColor = lipgloss.Color("8")
+	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("14"))
+	doneStyle      = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("8"))
+	helpStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 )
 
 type mode int
@@ -27,15 +26,17 @@ const (
 )
 
 type model struct {
-	db       *sql.DB
-	tasks    []Task
-	cursor   int
-	mode     mode
-	input    textinput.Model
-	width    int
-	height   int
-	err      error
-	quitting bool
+	db         *sql.DB
+	tasks      []Task
+	pane       int // 0 = task, 1 = done
+	taskCursor int
+	doneCursor int
+	mode       mode
+	input      textinput.Model
+	width      int
+	height     int
+	err        error
+	quitting   bool
 }
 
 func newModel(db *sql.DB, tasks []Task) model {
@@ -48,6 +49,35 @@ func newModel(db *sql.DB, tasks []Task) model {
 		tasks: tasks,
 		input: ti,
 	}
+}
+
+func (m model) pendingTasks() []Task {
+	var out []Task
+	for _, t := range m.tasks {
+		if !t.Completed {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func (m model) completedTasks() []Task {
+	var out []Task
+	for _, t := range m.tasks {
+		if t.Completed {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func (m model) findTaskIndex(id int) int {
+	for i, t := range m.tasks {
+		if t.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m model) Init() tea.Cmd {
@@ -71,47 +101,88 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pending := m.pendingTasks()
+	done := m.completedTasks()
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
 
+	case "1":
+		m.pane = 0
+
+	case "2":
+		m.pane = 1
+
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.pane == 0 && m.taskCursor > 0 {
+			m.taskCursor--
+		} else if m.pane == 1 && m.doneCursor > 0 {
+			m.doneCursor--
 		}
 
 	case "down", "j":
-		if m.cursor < len(m.tasks)-1 {
-			m.cursor++
+		if m.pane == 0 && m.taskCursor < len(pending)-1 {
+			m.taskCursor++
+		} else if m.pane == 1 && m.doneCursor < len(done)-1 {
+			m.doneCursor++
 		}
 
 	case "a":
+		m.pane = 0
 		m.mode = modeInput
 		m.input.Reset()
 		m.input.Focus()
 		return m, m.input.Cursor.BlinkCmd()
 
 	case " ", "enter":
-		if len(m.tasks) > 0 {
-			task := m.tasks[m.cursor]
+		if m.pane == 0 && len(pending) > 0 {
+			task := pending[m.taskCursor]
+			idx := m.findTaskIndex(task.ID)
 			if err := toggleTask(m.db, task.ID); err != nil {
 				m.err = err
 				return m, nil
 			}
-			m.tasks[m.cursor].Completed = !m.tasks[m.cursor].Completed
+			m.tasks[idx].Completed = true
+			if m.taskCursor >= len(pending)-1 && m.taskCursor > 0 {
+				m.taskCursor--
+			}
+		} else if m.pane == 1 && len(done) > 0 {
+			task := done[m.doneCursor]
+			idx := m.findTaskIndex(task.ID)
+			if err := toggleTask(m.db, task.ID); err != nil {
+				m.err = err
+				return m, nil
+			}
+			m.tasks[idx].Completed = false
+			if m.doneCursor >= len(done)-1 && m.doneCursor > 0 {
+				m.doneCursor--
+			}
 		}
 
 	case "d":
-		if len(m.tasks) > 0 {
-			task := m.tasks[m.cursor]
+		if m.pane == 0 && len(pending) > 0 {
+			task := pending[m.taskCursor]
+			idx := m.findTaskIndex(task.ID)
 			if err := deleteTask(m.db, task.ID); err != nil {
 				m.err = err
 				return m, nil
 			}
-			m.tasks = append(m.tasks[:m.cursor], m.tasks[m.cursor+1:]...)
-			if m.cursor >= len(m.tasks) && m.cursor > 0 {
-				m.cursor--
+			m.tasks = append(m.tasks[:idx], m.tasks[idx+1:]...)
+			if m.taskCursor >= len(pending)-1 && m.taskCursor > 0 {
+				m.taskCursor--
+			}
+		} else if m.pane == 1 && len(done) > 0 {
+			task := done[m.doneCursor]
+			idx := m.findTaskIndex(task.ID)
+			if err := deleteTask(m.db, task.ID); err != nil {
+				m.err = err
+				return m, nil
+			}
+			m.tasks = append(m.tasks[:idx], m.tasks[idx+1:]...)
+			if m.doneCursor >= len(done)-1 && m.doneCursor > 0 {
+				m.doneCursor--
 			}
 		}
 	}
@@ -130,7 +201,7 @@ func (m model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.tasks = append(m.tasks, task)
-			m.cursor = len(m.tasks) - 1
+			m.taskCursor = len(m.pendingTasks()) - 1
 		}
 		m.mode = modeNormal
 		m.input.Blur()
@@ -152,69 +223,113 @@ func (m model) View() string {
 		return ""
 	}
 
-	today := time.Now().Format("2006-01-02")
-	s := titleStyle.Render(fmt.Sprintf("daylog — %s", today)) + "\n\n"
+	pending := m.pendingTasks()
+	done := m.completedTasks()
 
-	if len(m.tasks) == 0 && m.mode != modeInput {
-		s += "No tasks for today. Press 'a' to add one.\n"
+	colWidth := m.width / 2
+	panelHeight := m.height - 1 // 1 line for help bar
+
+	// Build task column content
+	var taskContent strings.Builder
+	if len(pending) == 0 && m.mode != modeInput {
+		taskContent.WriteString("  No tasks. Press 'a' to add.\n")
 	}
-
-	for i, task := range m.tasks {
+	for i, task := range pending {
 		cursor := "  "
-		if i == m.cursor {
+		if m.pane == 0 && i == m.taskCursor {
 			cursor = "> "
 		}
-
-		check := "[ ]"
-		if task.Completed {
-			check = "[x]"
-		}
-
-		line := fmt.Sprintf("%s%s %s", cursor, check, task.Title)
-
-		if task.Completed {
-			line = doneStyle.Render(line)
-		} else if i == m.cursor {
+		line := fmt.Sprintf("%s%s", cursor, task.Title)
+		if m.pane == 0 && i == m.taskCursor {
 			line = selectedStyle.Render(line)
 		}
-
-		s += line + "\n"
+		taskContent.WriteString(line + "\n")
 	}
-
 	if m.mode == modeInput {
-		s += "\n" + m.input.View() + "\n"
+		taskContent.WriteString("\n  " + m.input.View() + "\n")
 	}
+
+	// Build done column content
+	var doneContent strings.Builder
+	if len(done) == 0 {
+		doneContent.WriteString("  No completed tasks.\n")
+	}
+	for i, task := range done {
+		cursor := "  "
+		if m.pane == 1 && i == m.doneCursor {
+			cursor = "> "
+		}
+		line := fmt.Sprintf("%s%s", cursor, task.Title)
+		if m.pane == 1 && i == m.doneCursor {
+			line = selectedStyle.Render(line)
+		} else {
+			line = doneStyle.Render(line)
+		}
+		doneContent.WriteString(line + "\n")
+	}
+
+	leftPanel := renderPanel("Task [1]", taskContent.String(), colWidth, panelHeight, m.pane == 0)
+	rightPanel := renderPanel("Done [2]", doneContent.String(), m.width-colWidth, panelHeight, m.pane == 1)
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+
+	help := helpStyle.Render(" a: add • space/enter: toggle • d: delete • j/k: navigate • 1/2: switch pane • q: quit")
 
 	if m.err != nil {
-		s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", m.err))
+		help += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
-	help := helpStyle.Render("a: add • space/enter: toggle • d: delete • j/k: navigate • q: quit")
+	return columns + "\n" + help
+}
 
-	// Border takes 2 cols and 2 rows, padding takes 2 cols and 2 rows
-	innerWidth := m.width - 4
-	innerHeight := m.height - 4
-	if innerWidth < 0 {
-		innerWidth = 0
-	}
-	if innerHeight < 0 {
-		innerHeight = 0
+func renderPanel(title string, content string, width, height int, focused bool) string {
+	bc := dimBorderColor
+	if focused {
+		bc = borderColor
 	}
 
-	// Count content lines and pad to push help to the bottom
-	contentLines := strings.Count(s, "\n")
-	padding := innerHeight - contentLines - 1 // -1 for the help line
-	if padding > 0 {
-		s += strings.Repeat("\n", padding)
+	bStyle := lipgloss.NewStyle().Foreground(bc)
+	tStyle := lipgloss.NewStyle().Foreground(bc).Bold(true)
+
+	innerW := width - 2
+	innerH := height - 2
+	if innerW < 0 {
+		innerW = 0
 	}
-	s += help
+	if innerH < 0 {
+		innerH = 0
+	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1, 1).
-		Width(innerWidth).
-		Height(innerHeight)
+	// Top border: ╭─ Title ──...──╮
+	titleText := fmt.Sprintf(" %s ", title)
+	titleLen := len([]rune(titleText))
+	dashesAfter := innerW - 1 - titleLen
+	if dashesAfter < 0 {
+		dashesAfter = 0
+	}
+	top := bStyle.Render("╭─") + tStyle.Render(titleText) + bStyle.Render(strings.Repeat("─", dashesAfter)+"╮")
 
-	return box.Render(s)
+	// Bottom border: ╰──...──╯
+	bottom := bStyle.Render("╰" + strings.Repeat("─", innerW) + "╯")
+
+	// Split content into lines and pad to fill inner height
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	for len(lines) < innerH {
+		lines = append(lines, "")
+	}
+	lines = lines[:innerH]
+
+	var sb strings.Builder
+	sb.WriteString(top + "\n")
+	for _, line := range lines {
+		lineW := lipgloss.Width(line)
+		pad := innerW - lineW
+		if pad < 0 {
+			pad = 0
+		}
+		sb.WriteString(bStyle.Render("│") + line + strings.Repeat(" ", pad) + bStyle.Render("│") + "\n")
+	}
+	sb.WriteString(bottom)
+
+	return sb.String()
 }
