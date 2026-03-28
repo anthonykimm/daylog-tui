@@ -33,6 +33,11 @@ func openDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enabling foreign keys: %w", err)
+	}
+
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrating database: %w", err)
@@ -292,4 +297,8 @@ func isLinearIssueLinked(db *sql.DB, externalID string) bool {
 		externalID,
 	).Scan(&count)
 	return err == nil && count > 0
+}
+
+func deleteTaskLink(db *sql.DB, taskID int) {
+	db.Exec("DELETE FROM task_links WHERE task_id = ?", taskID)
 }

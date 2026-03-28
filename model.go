@@ -29,6 +29,9 @@ var (
 	statusTodo     = lipgloss.NewStyle().Foreground(lipgloss.Color("15")) // white
 	statusStarted  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // yellow
 	statusReview   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // blue
+
+	unsyncedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))   // dim gray
+	syncedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("135")) // purple
 )
 
 func priorityIcon(priority int) string {
@@ -394,6 +397,7 @@ func (m model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.pane == 0 && len(pending) > 0 {
 			task := pending[m.taskCursor]
 			idx := m.findTaskIndex(task.ID)
+			deleteTaskLink(m.db, task.ID)
 			if err := deleteTask(m.db, task.ID); err != nil {
 				m.err = err
 				return m, nil
@@ -692,7 +696,15 @@ func (m model) View() string {
 				cursor = "> "
 			}
 
-			left := fmt.Sprintf("%s%s - %s", cursor, issue.Key, issue.Title)
+			linked := isLinearIssueLinked(m.db, issue.ID)
+			var syncIcon string
+			if linked {
+				syncIcon = syncedStyle.Render("◆") + " "
+			} else {
+				syncIcon = unsyncedStyle.Render("◇") + " "
+			}
+
+			left := fmt.Sprintf("%s%s%s - %s", cursor, syncIcon, issue.Key, issue.Title)
 			right := fmt.Sprintf("%s %s", priorityIcon(issue.Priority), statusIcon(issue.StatusType))
 
 			// Pad to fill width, right-align the icons
@@ -706,11 +718,8 @@ func (m model) View() string {
 
 			line := left + strings.Repeat(" ", gap) + right
 
-			linked := isLinearIssueLinked(m.db, issue.ID)
 			if m.pane == 2 && i == m.linearCursor {
 				line = selectedStyle.Render(line)
-			} else if linked {
-				line = doneStyle.Render(line)
 			}
 
 			linearContent.WriteString(line + "\n")
