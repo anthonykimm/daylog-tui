@@ -81,7 +81,7 @@ func (m model) View() string {
 		"                             ░██                       ░██",
 		"                       ░███████                  ░███████",
 	}
-	daylogGradient := []string{"21", "27", "33", "39", "45", "51", "87", "123", "159"}
+	daylogGradient := []string{"#4A6FA5", "#5A7FB0", "#6A8FBB", "#7A9FC6", "#8AAFD1", "#96B9D0", "#A0C1D4", "#AECBD6", "#B8D2DA"}
 	var daylogBanner strings.Builder
 	for i, line := range daylogBannerLines {
 		colorIdx := i
@@ -335,7 +335,7 @@ func (m model) View() string {
 	}
 
 	// Blue to light blue gradient: dark blue -> medium blue -> light blue
-	gradientColors := []string{"21", "27", "33", "39", "45", "51", "87", "123", "159"}
+	gradientColors := []string{"#4A6FA5", "#5A7FB0", "#6A8FBB", "#7A9FC6", "#8AAFD1", "#96B9D0", "#A0C1D4", "#AECBD6", "#B8D2DA"}
 	var linearBannerBuilder strings.Builder
 	for i, line := range bannerLines {
 		colorIdx := i
