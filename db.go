@@ -333,3 +333,7 @@ func saveSummary(db *sql.DB, date, content string) error {
 	)
 	return err
 }
+
+func deleteSummary(db *sql.DB, date string) {
+	db.Exec("DELETE FROM summaries WHERE date = ?", date)
+}

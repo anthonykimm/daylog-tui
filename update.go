@@ -231,8 +231,18 @@ func (m model) handleNormalMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if m.pane == m.summaryPaneIndex() && !m.snapshot {
 			m.mode = modeSummaryEdit
+			m.resizeSummaryArea()
 			m.summaryArea.Focus()
 			return m, m.summaryArea.Cursor.BlinkCmd()
+		}
+
+	case "R":
+		if m.pane == m.summaryPaneIndex() && !m.snapshot {
+			m.summaryContent = m.autoGenerateSummary()
+			m.summaryArea.SetValue(m.summaryContent)
+			m.summaryEdited = false
+			m.lastItemCount = len(m.summaryItems())
+			deleteSummary(m.db, m.viewDate.Format("2006-01-02"))
 		}
 
 	case "g":

@@ -254,6 +254,29 @@ func (m *model) refreshSummaryContent() {
 	m.lastItemCount = newCount
 }
 
+func (m *model) resizeSummaryArea() {
+	bannerHeight := 10 // 9 lines + 1 spacing
+	availableHeight := m.height - 1 - bannerHeight
+	bottomHeight := availableHeight / 3
+	hasLinear := linearIsAuthenticated(m.db) && !m.snapshot
+
+	panelW := m.width
+	if hasLinear {
+		panelW = m.width - m.width/2
+	}
+	// Inner dimensions: panel minus border (2) and some padding
+	innerW := panelW - 4
+	innerH := bottomHeight - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+	m.summaryArea.SetWidth(innerW)
+	m.summaryArea.SetHeight(innerH)
+}
+
 func (m model) isToday() bool {
 	now := time.Now()
 	return m.viewDate.Year() == now.Year() && m.viewDate.YearDay() == now.YearDay()

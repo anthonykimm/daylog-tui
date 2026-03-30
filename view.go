@@ -253,7 +253,7 @@ func (m model) View() string {
 			summaryContent.WriteString("  " + line + "\n")
 		}
 		if !m.snapshot {
-			summaryContent.WriteString("\n  " + helpStyle.Render("i: edit • c: copy"))
+			summaryContent.WriteString("\n  " + helpStyle.Render("i: edit • c: copy • R: regenerate"))
 		}
 	}
 
